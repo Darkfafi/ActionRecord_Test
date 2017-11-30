@@ -1,118 +1,76 @@
-﻿using System.Collections.Generic;
-using UnityEngine;
+﻿using UnityEngine;
 
-public class TransformRecorder : MonoBehaviour, IRecordable<TransformRecordedAction>
+public class TransformRecorder : BaseRecorder<TransformRecordedAction>
 {
-    public bool IsRecording
-    {
-        get; private set;
-    }
-
-    public float TimeRecorded
-    {
-        get
-        {
-            return timeAmountRecorded;
-        }
-    }
-
     [SerializeField]
     private float recordDelayInSeconds = 0.5f;
 
     [SerializeField]
     private float minDistanceForSnapping = 1;
 
+    protected override BaseRecordedData<TransformRecordedAction> DefineRecorderData()
+    {
+        return new TransformRecordedData(minDistanceForSnapping, recordDelayInSeconds);
+    }
+}
+
+public class TransformRecordedData : BaseRecordedData<TransformRecordedAction>
+{
+    private float minDistanceForSnapping;
+    private float recordDelayInSeconds;
     private float timeSinceLastRecording = 0;
-    private float timeAmountRecorded = 0;
 
-    private List<TransformRecordedAction> recordedData = new List<TransformRecordedAction>();
-
-    public void ApplyRecordedAction(TransformRecordedAction action)
+    public TransformRecordedData(float minDistanceForSnapping, float recordDelayInSeconds)
     {
-        transform.position = action.Position;
-        transform.rotation = Quaternion.Euler(action.Rotation);
-        transform.localScale = action.Scale;
+        this.minDistanceForSnapping = minDistanceForSnapping;
+        this.recordDelayInSeconds = recordDelayInSeconds;
     }
 
-    public TransformRecordedAction GetRecordedActionAt(float time, TimeType timeType)
+    public override void ApplyRecordedAction(TransformRecordedAction action)
     {
-        TransformRecordedAction action = new TransformRecordedAction();
-
-        float percentage = time;
-
-        if(timeType == TimeType.ExactTime)
-        {
-            if (TimeRecorded != 0)
-            {
-                percentage = time / TimeRecorded; // Time To Percentage
-            }
-        }
-        else
-        {
-            time = TimeRecorded * time; // Percentage To Time
-        }
-
-        percentage = Mathf.Clamp01(percentage);
-
-        TransformRecordedAction[] acs = GetActionsForTimePercentage(time);
-
-        if(acs.Length == 1)
-        {
-            action = acs[0];
-        }
-        else if(acs.Length > 1)
-        {
-            TransformRecordedAction acStart = acs[0];
-            TransformRecordedAction acLate = acs[1];
-            float percentageBetween2 = Mathf.Abs((acStart.TimeStamp - time)/(acLate.TimeStamp - time));
-            Vector3 lerpedPos = LerpOrSnap(acStart.Position, acLate.Position, percentageBetween2, minDistanceForSnapping);
-            Vector3 lerpedRot = Quaternion.Lerp(Quaternion.Euler(acStart.Rotation), Quaternion.Euler(acStart.Rotation), percentageBetween2).eulerAngles;
-            Vector3 lerpedScale = Vector3.Lerp(acStart.Scale, acLate.Scale, percentageBetween2);
-
-            action = new TransformRecordedAction(time, lerpedPos, lerpedRot, lerpedScale);
-        }
-
-        return action;
+        affected.transform.position = action.Position;
+        affected.transform.rotation = Quaternion.Euler(action.Rotation);
+        affected.transform.localScale = action.Scale;
     }
 
-    public void StartRecording(bool overridePreviousRecording = true)
+    protected override void RecordUpdate()
     {
-        if (IsRecording) return;
-
-        if (overridePreviousRecording)
+        if (TimeRecorded >= timeSinceLastRecording + recordDelayInSeconds || timeSinceLastRecording == 0)
         {
-            recordedData.Clear();
+            Record(TimeRecorded, affected.transform.position, affected.transform.rotation.eulerAngles, affected.transform.localScale);
+
+            timeSinceLastRecording = TimeRecorded;
+        }
+    }
+
+    protected override TransformRecordedAction SetActionBetween2ActionValues(TransformRecordedAction earliestValue, TransformRecordedAction latestValue
+        , float percentageBetweenTwoValues, float time, float percentageTimeTotalTime)
+    {
+        float percentageBetween2 = Mathf.Abs((earliestValue.TimeStamp - time) / (latestValue.TimeStamp - time));
+        Vector3 lerpedPos = LerpOrSnap(earliestValue.Position, latestValue.Position, percentageBetween2, minDistanceForSnapping);
+        Vector3 lerpedRot = Quaternion.Lerp(Quaternion.Euler(earliestValue.Rotation), Quaternion.Euler(earliestValue.Rotation), percentageBetween2).eulerAngles;
+        Vector3 lerpedScale = Vector3.Lerp(earliestValue.Scale, latestValue.Scale, percentageBetween2);
+
+        return new TransformRecordedAction(time, lerpedPos, lerpedRot, lerpedScale);
+    }
+
+    protected override void StartedRecording(bool deletedPreviousData)
+    {
+        if (deletedPreviousData)
+        {
             timeSinceLastRecording = 0;
-            timeAmountRecorded = 0;
-        }
-
-        IsRecording = true;
-    }
-
-    public void StopRecording()
-    {
-        if (!IsRecording) return;
-        IsRecording = false;
-    }
-
-    protected void LateUpdate()
-    {
-        if (!IsRecording) return;
-
-        timeAmountRecorded += Time.deltaTime;
-
-        if(timeAmountRecorded >= timeSinceLastRecording + recordDelayInSeconds || timeSinceLastRecording == 0)
-        {
-            Record(timeAmountRecorded, transform.position, transform.rotation.eulerAngles, transform.localScale);
-
-            timeSinceLastRecording = timeAmountRecorded;
         }
     }
 
-    private void Record(float time, Vector3 pos, Vector3 rot, Vector3 scale)
+    protected override void StoppedRecording()
+    {
+
+    }
+
+    private void Record(float timeRecorded, Vector3 position, Vector3 eulerAngles, Vector3 localScale)
     {
         bool performAdd = recordedData.Count == 0;
-        TransformRecordedAction newAction = new TransformRecordedAction(time, pos, rot, scale);
+        TransformRecordedAction newAction = new TransformRecordedAction(timeRecorded, position, eulerAngles, localScale);
 
         if (!performAdd)
         {
@@ -124,37 +82,6 @@ public class TransformRecorder : MonoBehaviour, IRecordable<TransformRecordedAct
         {
             recordedData.Add(newAction);
         }
-    }
-
-    /// <summary>
-    /// Returns 1 element if time == a recoded time, else it returns 2 surrounding elements
-    /// </summary>
-    /// <param name="time">time</param>
-    /// <returns>Element(s) of interest, returns an empty array if nothing has been recorded</returns>
-    private TransformRecordedAction[] GetActionsForTimePercentage(float time)
-    {
-        if (recordedData.Count != 0)
-        {
-            if (recordedData[0].TimeStamp >= time) { return new TransformRecordedAction[] { recordedData[0] }; }
-
-            for (int i = recordedData.Count - 1; i >= 0; i--)
-            {
-                if (recordedData[i].TimeStamp <= time)
-                {
-                    if (i == recordedData.Count - 1 || recordedData.Count == 1 || recordedData[i].TimeStamp == time) { return new TransformRecordedAction[] { recordedData[i] }; }
-
-                    return new TransformRecordedAction[] { recordedData[i], recordedData[i + 1] };
-                }
-            }
-        }
-
-        return new TransformRecordedAction[] { };
-    }
-
-    private float TimeToPercentage(float time)
-    {
-        if (TimeRecorded == 0) return 0;
-        return Mathf.Clamp01(time / TimeRecorded);
     }
 
     private Vector3 LerpOrSnap(Vector3 start, Vector3 end, float percentage, float minDistanceToSnap)
@@ -171,7 +98,7 @@ public class TransformRecorder : MonoBehaviour, IRecordable<TransformRecordedAct
     }
 }
 
-public struct TransformRecordedAction : IRecordedAction
+public struct TransformRecordedAction : IRecordableAction
 {
     public float TimeStamp
     {

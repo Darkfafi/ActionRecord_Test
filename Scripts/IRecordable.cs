@@ -8,7 +8,7 @@ public enum TimeType
     PercentageTime
 }
 
-public interface IRecordable<RA> where RA : IRecordedAction
+public interface IRecordable<RA> where RA : IRecordableAction
 {
     float TimeRecorded { get; }
     bool IsRecording { get; }
@@ -21,7 +21,7 @@ public interface IRecordable<RA> where RA : IRecordedAction
 
 }
 
-public interface IRecordedAction
+public interface IRecordableAction
 {
     float TimeStamp { get; }
 }

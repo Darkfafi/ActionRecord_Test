@@ -107,7 +107,6 @@ public class TransformRecorderDebug : MonoBehaviour
         currentTimeText.text = NormalFloat(currentTime).ToString();
         maxTimeText.text = NormalFloat(timeRecorded).ToString();
         Vector3 pbs = progressBar.transform.localScale;
-
         if(timeRecorded > 0)
             pbs.x = (currentTime / timeRecorded);
 
